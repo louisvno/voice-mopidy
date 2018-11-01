@@ -9,8 +9,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "fs": "0.0.1-security",
     "mopidy": "^0.5.0",
+    "node-portaudio": "^0.4.9",
     "node-record-lpcm16": "^0.3.1",
-    "snowboy": "1.2.0"
+    "snowboy": "1.2.0",
+    "wav": "^1.0.2"
   }
 }
