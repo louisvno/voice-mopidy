@@ -5,9 +5,8 @@ const Models = require('snowboy').Models;
 const fs = require('fs');
 const wav = require('wav');
 const portAudio = require('node-portaudio');
-
-var reader = new wav.Reader();
-
+const googleSpeech = require('@google-cloud/speech')
+var speech = new googleSpeech.SpeechClient();
 var mopidy = new Mopidy({
     webSocketUrl: "ws://localhost:6680/mopidy/ws/",
     callingConvention: "by-position-or-by-name"
@@ -15,36 +14,51 @@ var mopidy = new Mopidy({
 console.log(portAudio.getDevices())
 //snowboy
 const models = new Models();
+const file = fs.readFileSync("resources/hello.wav")
+const audioBytes = file.toString('base64');
+console.log(audioBytes)
+const audio ={content:audioBytes}
+const config = {
+  encoding: 'LINEAR16',
+  sampleRateHertz: 16000,
+  languageCode: 'en-US'
+}
+const request = {
+  audio:audio,
+  config:config
+}
+speech.recognize(request)
+.then(data => {
+  const response = data[0];
+  console.log(response.results.map(res=>res.alternatives[0].transcript).join('\n'))
 
-   //sampleFormat: portAudio.SampleFormat16Bit,
- // Create a stream to pipe into the AudioOutput
-// Note that this does not strip the WAV header so a click will be heard at the beginning
-const readStream = fs.createReadStream('resources/snowboy.wav');
- // setup to close the output stream at the end of the read stream
+})
 
-//ao.on('error', err => console.error);
- 
 // the "format" event gets emitted at the end of the WAVE header
-reader.on('format', function (format) {
-    console.log("format"+format)
-    Object.keys(format).forEach(k=> console.log(k + ":" + format[k]))
-    console.log("hola" +reader.audioFormat)
-    var ao = new portAudio.AudioOutput({
-        channelCount: format.channels,
-        sampleFormat: format.bitDepth,
-        sampleRate: format.sampleRate,
-        deviceId : -1 // Use -1 or omit the deviceId to select the default device
-       });
-  // the WAVE header is stripped from the output of the reader
-  ao.start();
-  readStream.on('end', () => ao.end());
-  reader.pipe(ao);
-  
-});
-readStream.pipe(reader)
-// pipe the WAVE file to the Reader instance
-//readStream.pipe(ao);
+const wavReader = new wav.Reader();
+appFeedbackAudioOut("resources/ding.wav")
+function appFeedbackAudioOut(filePath){
+    const readStream = fs.createReadStream(filePath); 
+    
 
+    wavReader.on('format', function (format) {
+        Object.keys(format).forEach(k=> console.log(k + ":" + format[k]))
+    
+        var ao = new portAudio.AudioOutput({
+            channelCount: format.channels,
+            sampleFormat: format.bitDepth,
+            sampleRate: format.sampleRate,
+            deviceId : -1 // Use -1 or omit the deviceId to select the default device
+           });
+        
+      // the WAVE header is stripped from the output of the reader
+        wavReader.pipe(ao); 
+        ao.start(); 
+        readStream.on('end', () => ao.end());
+    });
+
+    readStream.pipe(wavReader);  
+}
 
 models.add({
   file: 'resources/models/snowboy.umdl',
@@ -73,7 +87,7 @@ detector.on('hotword', function (index, hotword, buffer) {
   
 
 mopidy.on("state:online", function () {
-    startMicListening();
+    //startMicListening();
     console.log("yolo")
     console.log(mopidy.library.search.params);
     console.log(mopidy.tracklist.add.params);

@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@google-cloud/speech": "^2.1.1",
     "fs": "0.0.1-security",
     "mopidy": "^0.5.0",
     "node-portaudio": "^0.4.9",
