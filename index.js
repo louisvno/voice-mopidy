@@ -4,6 +4,7 @@ const Detector = require('snowboy').Detector;
 const Models = require('snowboy').Models;
 const fs = require('fs');
 const wav = require('wav');
+const FileWriter = require('wav').FileWriter;
 const portAudio = require('node-portaudio');
 const googleSpeech = require('@google-cloud/speech')
 var speech = new googleSpeech.SpeechClient();
@@ -11,32 +12,39 @@ var mopidy = new Mopidy({
     webSocketUrl: "ws://localhost:6680/mopidy/ws/",
     callingConvention: "by-position-or-by-name"
 });
-console.log(portAudio.getDevices())
+//console.log(portAudio.getDevices())
 //snowboy
 const models = new Models();
-const file = fs.readFileSync("resources/hello.wav")
-const audioBytes = file.toString('base64');
-console.log(audioBytes)
-const audio ={content:audioBytes}
+//const file = fs.readFileSync("resources/hello.wav")
+//const audioBytes = file.toString('base64');
+//console.log(audioBytes)
+//const audio ={content:audioBytes}
 const config = {
   encoding: 'LINEAR16',
   sampleRateHertz: 16000,
   languageCode: 'en-US'
 }
-const request = {
-  audio:audio,
-  config:config
-}
-speech.recognize(request)
-.then(data => {
-  const response = data[0];
-  console.log(response.results.map(res=>res.alternatives[0].transcript).join('\n'))
 
-})
+let bufferArr =[];
+let hw = 0;
+
+function sendToSpeechApi(audioBytes){
+  let request = {
+    audio:{content: audioBytes},
+    config:config
+  }
+
+  speech.recognize(request)
+    .then(data => {
+      const response = data[0];
+      console.log(response.results.map(res=>res.alternatives[0].transcript).join('\n'))
+
+    })
+}
 
 // the "format" event gets emitted at the end of the WAVE header
 const wavReader = new wav.Reader();
-appFeedbackAudioOut("resources/ding.wav")
+/*appFeedbackAudioOut("resources/ding.wav")
 function appFeedbackAudioOut(filePath){
     const readStream = fs.createReadStream(filePath); 
     
@@ -58,7 +66,7 @@ function appFeedbackAudioOut(filePath){
     });
 
     readStream.pipe(wavReader);  
-}
+}*/
 
 models.add({
   file: 'resources/models/snowboy.umdl',
@@ -78,35 +86,53 @@ detector.on('hotword', function (index, hotword, buffer) {
     // event. It could be written to a wav stream. You will have to use it
     // together with the <buffer> in the "sound" event if you want to get audio
     // data after the hotword.
-    mopidy.tracklist.add({uris:["yt:http://www.youtube.com/watch?v=bk6Xst6euQk"]})
+    /*mopidy.tracklist.add({uris:["yt:http://www.youtube.com/watch?v=bk6Xst6euQk"]})
     .then(mopidy.tracklist.getTracks()[0])
-    .then(mopidy.playback.play)
-    console.log(buffer);
-    console.log('hotword', index, hotword);
+    .then(mopidy.playback.play)*/
+    console.log("you got snowboyed")
+    bufferArr.push(buffer);
+    hw++;
+
   });
-  
+
 
 mopidy.on("state:online", function () {
-    //startMicListening();
+    startMicListening();
     console.log("yolo")
     console.log(mopidy.library.search.params);
     console.log(mopidy.tracklist.add.params);
    
     //console.log(mopidy.library.search([{'artist':['solomun']},["yt:"]]));
 }); 
-/*
+
 detector.on('sound', function (buffer) {
   // <buffer> contains the last chunk of the audio that triggers the "sound"
   // event. It could be written to a wav stream.
+  bufferArr.push(buffer);
   console.log('sound');
+});
+detector.on('silence', function () {
+  if(hw ===1){
+  /*const wStream = new FileWriter('test.wav',{
+    sampleRate: 16000,
+    channels:1
+  }); 
+  wStream.write(Buffer.concat(bufferArr));
+  wStream.end();*/
+    sendToSpeechApi((Buffer.concat(bufferArr)).toString('base64'));
+    bufferArr = [];
+    console.log('silence');
+  }
+hw = 0;
 });
 detector.on('error', function () {
   console.log('error');
-});*/
+});
+
 function startMicListening() {
     const mic = record.start({
         threshold: 0,
-        verbose: true
+        verbose: false
       });
       
     mic.pipe(detector);
