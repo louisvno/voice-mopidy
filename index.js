@@ -1,4 +1,4 @@
-const Mopidy = require ('mopidy');
+
 const record = require('node-record-lpcm16');
 const Detector = require('snowboy').Detector;
 const Models = require('snowboy').Models;
@@ -7,18 +7,15 @@ const wav = require('wav');
 const FileWriter = require('wav').FileWriter;
 const portAudio = require('node-portaudio');
 const googleSpeech = require('@google-cloud/speech')
+const speechResolveService = require('./service/speechResolve')
+//speechResolveService.resolveCommandLine("play track 1");
 var speech = new googleSpeech.SpeechClient();
-var mopidy = new Mopidy({
+const Mopidy = require ('mopidy');
+let mopidy = new Mopidy({
     webSocketUrl: "ws://localhost:6680/mopidy/ws/",
     callingConvention: "by-position-or-by-name"
 });
-//console.log(portAudio.getDevices())
-//snowboy
 const models = new Models();
-//const file = fs.readFileSync("resources/hello.wav")
-//const audioBytes = file.toString('base64');
-//console.log(audioBytes)
-//const audio ={content:audioBytes}
 const config = {
   encoding: 'LINEAR16',
   sampleRateHertz: 16000,
@@ -26,21 +23,28 @@ const config = {
 }
 
 let bufferArr =[];
-let hw = 0;
+let hotwordDetected = false;
 
 function sendToSpeechApi(audioBytes){
   let request = {
     audio:{content: audioBytes},
     config:config
   }
-
+  console.log(request)
   speech.recognize(request)
     .then(data => {
       const response = data[0];
-      console.log(response.results.map(res=>res.alternatives[0].transcript).join('\n'))
-
-    })
+      let cmdLine = response.results.map(res=>res.alternatives[0].transcript).join('\n');
+      console.log(cmdLine);
+      speechResolveService.resolveCommandLine(cmdLine,mopidy);
+  })
 }
+
+mopidy.on("state:online", function () {
+  startMicListening();
+  console.log("yoooo")
+}); 
+
 
 // the "format" event gets emitted at the end of the WAVE header
 const wavReader = new wav.Reader();
@@ -86,24 +90,10 @@ detector.on('hotword', function (index, hotword, buffer) {
     // event. It could be written to a wav stream. You will have to use it
     // together with the <buffer> in the "sound" event if you want to get audio
     // data after the hotword.
-    /*mopidy.tracklist.add({uris:["yt:http://www.youtube.com/watch?v=bk6Xst6euQk"]})
-    .then(mopidy.tracklist.getTracks()[0])
-    .then(mopidy.playback.play)*/
     console.log("you got snowboyed")
     bufferArr.push(buffer);
-    hw++;
-
+    hotwordDetected=true;
   });
-
-
-mopidy.on("state:online", function () {
-    startMicListening();
-    console.log("yolo")
-    console.log(mopidy.library.search.params);
-    console.log(mopidy.tracklist.add.params);
-   
-    //console.log(mopidy.library.search([{'artist':['solomun']},["yt:"]]));
-}); 
 
 detector.on('sound', function (buffer) {
   // <buffer> contains the last chunk of the audio that triggers the "sound"
@@ -111,20 +101,16 @@ detector.on('sound', function (buffer) {
   bufferArr.push(buffer);
   console.log('sound');
 });
+
 detector.on('silence', function () {
-  if(hw ===1){
-  /*const wStream = new FileWriter('test.wav',{
-    sampleRate: 16000,
-    channels:1
-  }); 
-  wStream.write(Buffer.concat(bufferArr));
-  wStream.end();*/
+  if(hotwordDetected === true){
     sendToSpeechApi((Buffer.concat(bufferArr)).toString('base64'));
-    bufferArr = [];
-    console.log('silence');
+    bufferArr = [];    
   }
-hw = 0;
+  hotwordDetected = false;
+  console.log('silence');
 });
+
 detector.on('error', function () {
   console.log('error');
 });
