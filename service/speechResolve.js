@@ -3,11 +3,18 @@ const mediaClient = require('../client/mediaClient');
 exports.resolveCommandLine= async (commandLine,mopidy)=>{
 
     let trackNumber = extractFirstNum(commandLine);
+    let pause = checkPause(commandLine);
+
     if(trackNumber){
         let res = await mediaClient.getMediaByListPos(trackNumber);
         playMedia(res.resourceId,mopidy)
         console.log(res)
-    } 
+    }else if(pause){
+        mopidy.playback.pause();
+    } else mopidy.playback.resume();
+}
+function checkPause(string){
+    return string.indexOf("pause") > -1;
 }
 
 function extractFirstNum(string){

@@ -91,6 +91,7 @@ detector.on('hotword', function (index, hotword, buffer) {
     // together with the <buffer> in the "sound" event if you want to get audio
     // data after the hotword.
     console.log("you got snowboyed")
+    mopidy.playback.pause();
     bufferArr.push(buffer);
     hotwordDetected=true;
   });
