@@ -8,8 +8,10 @@ const FileWriter = require('wav').FileWriter;
 const portAudio = require('node-portaudio');
 const googleSpeech = require('@google-cloud/speech')
 const speechResolveService = require('./service/speechResolve')
+const { fromEvent, combineLatest,timer,zip,merge } = require('rxjs');
+const { map, filter ,tap,throttleTime,exhaustMap, takeUntil, windowCount, bufferToggle} = require('rxjs/operators');
 //speechResolveService.resolveCommandLine("play track 1");
-var speech = new googleSpeech.SpeechClient();
+//var speech = new googleSpeech.SpeechClient();
 const Mopidy = require ('mopidy');
 let mopidy = new Mopidy({
     webSocketUrl: "ws://localhost:6680/mopidy/ws/",
@@ -22,10 +24,7 @@ const config = {
   languageCode: 'en-US'
 }
 
-let bufferArr =[];
-let hotwordDetected = false;
-
-function sendToSpeechApi(audioBytes){
+/*function sendToSpeechApi(audioBytes){
   let request = {
     audio:{content: audioBytes},
     config:config
@@ -38,11 +37,11 @@ function sendToSpeechApi(audioBytes){
       console.log(cmdLine);
       speechResolveService.resolveCommandLine(cmdLine,mopidy);
   })
-}
+}*/
 
 mopidy.on("state:online", function () {
   startMicListening();
-  console.log("yoooo")
+  console.log("Mic listening")
 }); 
 
 
@@ -85,7 +84,7 @@ const detector = new Detector({
   applyFrontend: true
 });
 
-detector.on('hotword', function (index, hotword, buffer) {
+/*detector.on('hotword', function (index, hotword, buffer) {
     // <buffer> contains the last chunk of the audio that triggers the "hotword"
     // event. It could be written to a wav stream. You will have to use it
     // together with the <buffer> in the "sound" event if you want to get audio
@@ -94,23 +93,37 @@ detector.on('hotword', function (index, hotword, buffer) {
     mopidy.playback.pause();
     bufferArr.push(buffer);
     hotwordDetected=true;
-  });
+  });*/
 
-detector.on('sound', function (buffer) {
-  // <buffer> contains the last chunk of the audio that triggers the "sound"
-  // event. It could be written to a wav stream.
-  bufferArr.push(buffer);
-  console.log('sound');
-});
 
-detector.on('silence', function () {
-  if(hotwordDetected === true){
-    sendToSpeechApi((Buffer.concat(bufferArr)).toString('base64'));
-    bufferArr = [];    
-  }
-  hotwordDetected = false;
-  console.log('silence');
-});
+const silenceDetected = fromEvent(detector, 'silence');
+const hotwordDetectedz = fromEvent(detector, 'hotword');
+
+hotwordDetectedz.subscribe(res => mopidy.playback.pause());
+silenceDetected.subscribe(_=> console.log("silence"));
+
+const soundDetected = fromEvent(detector,'sound');
+
+const playBackStateChanged = fromEvent(mopidy, 'event:playbackStateChanged').pipe(
+    tap(state => console.log("mopidy new state: " + state.new_state))
+);
+
+const allSounds = merge(hotwordDetectedz,soundDetected);
+
+const playBackStoppedOrPaused = playBackStateChanged
+    .pipe(
+        filter(state => state.new_state === "stopped" || state.new_state === "paused"),
+    );
+
+//or x silence detected or x seconds
+const recordVoiceStop = silenceDetected.pipe(windowCount(3),tap(_=>console.log(3)));
+
+const utterance = allSounds.pipe(
+    bufferToggle(hotwordDetectedz,_=> silenceDetected)
+);
+//send to google
+utterance.subscribe(res => console.log(res));
+
 
 detector.on('error', function () {
   console.log('error');
