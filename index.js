@@ -9,7 +9,7 @@ const portAudio = require('node-portaudio');
 const googleSpeech = require('@google-cloud/speech')
 const speechResolveService = require('./service/speechResolve')
 const { fromEvent, combineLatest,timer,zip,merge } = require('rxjs');
-const { map, filter ,tap,throttleTime,exhaustMap, takeUntil, windowCount, bufferToggle} = require('rxjs/operators');
+const { map, filter ,tap,throttleTime,exhaustMap, takeUntil, windowCount, bufferToggle, bufferCount,delay} = require('rxjs/operators');
 //speechResolveService.resolveCommandLine("play track 1");
 //var speech = new googleSpeech.SpeechClient();
 const Mopidy = require ('mopidy');
@@ -17,6 +17,7 @@ let mopidy = new Mopidy({
     webSocketUrl: "ws://localhost:6680/mopidy/ws/",
     callingConvention: "by-position-or-by-name"
 });
+const silentBufferThreshold = 3; //externalize
 const models = new Models();
 const config = {
   encoding: 'LINEAR16',
@@ -95,34 +96,48 @@ const detector = new Detector({
     hotwordDetected=true;
   });*/
 
-
+//snowboy event streams
 const silenceDetected = fromEvent(detector, 'silence');
-const hotwordDetectedz = fromEvent(detector, 'hotword');
-
-hotwordDetectedz.subscribe(res => mopidy.playback.pause());
-silenceDetected.subscribe(_=> console.log("silence"));
-
+const hotwordDetected = fromEvent(detector, 'hotword');
 const soundDetected = fromEvent(detector,'sound');
+const allSounds = merge(hotwordDetected,soundDetected);
 
+hotwordDetected.subscribe(_ =>
+  {
+    console.log("hotword");
+    mopidy.playback.pause()
+  }
+);
+silenceDetected.subscribe(_=>console.log("silence"));
+soundDetected.subscribe(_=>console.log("sound"));
+
+//or x silence detected or x seconds
+const nSilenceDetected = silenceDetected.pipe(bufferCount(silentBufferThreshold));
+const utteranceTimeout = hotwordDetected.pipe(
+                                          delay(500),
+                                          tap(_=> console.log("timed out"))
+                                        );
+const stopRecordVoiceCmd = merge(nSilenceDetected,utteranceTimeout);
+
+const utterance = allSounds.pipe(
+    bufferToggle(hotwordDetected,_=> stopRecordVoiceCmd)
+);
+
+//send to google
+utterance.subscribe(res => console.log(res));
+
+
+
+//mopidy event streams
 const playBackStateChanged = fromEvent(mopidy, 'event:playbackStateChanged').pipe(
     tap(state => console.log("mopidy new state: " + state.new_state))
 );
-
-const allSounds = merge(hotwordDetectedz,soundDetected);
-
 const playBackStoppedOrPaused = playBackStateChanged
     .pipe(
         filter(state => state.new_state === "stopped" || state.new_state === "paused"),
     );
 
-//or x silence detected or x seconds
-const recordVoiceStop = silenceDetected.pipe(windowCount(3),tap(_=>console.log(3)));
 
-const utterance = allSounds.pipe(
-    bufferToggle(hotwordDetectedz,_=> silenceDetected)
-);
-//send to google
-utterance.subscribe(res => console.log(res));
 
 
 detector.on('error', function () {
