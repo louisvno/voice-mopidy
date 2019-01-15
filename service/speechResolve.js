@@ -1,7 +1,32 @@
 const mediaClient = require('../client/mediaClient');
 
-exports.resolveCommandLine= async (commandLine,mopidy)=>{
+//google speech is used but different provider could be used here
+const googleSpeech = require('@google-cloud/speech')
+let speech = new googleSpeech.SpeechClient();
 
+const config = {
+  encoding: 'LINEAR16',
+  sampleRateHertz: 16000,
+  languageCode: 'en-US'
+}
+
+exports.sendToSpeechApi = (audioBytes) =>{
+  let request = {
+    audio:{content: audioBytes},
+    config:config
+  }
+  speech.recognize(request)
+    .then(data => {
+      const response = data[0];
+      let cmdLine = response.results.map(res=>res.alternatives[0].transcript).join('\n');
+      console.log("result: " + cmdLine);
+      resolveCommandLine(cmdLine,mopidy);
+  })
+}
+
+
+const resolveCommandLine= async (commandLine,mopidy)=>{
+    
     let trackNumber = extractFirstNum(commandLine);
     let pause = checkPause(commandLine);
 
@@ -13,6 +38,7 @@ exports.resolveCommandLine= async (commandLine,mopidy)=>{
         mopidy.playback.pause();
     } else mopidy.playback.resume();
 }
+
 function checkPause(string){
     return string.indexOf("pause") > -1;
 }
