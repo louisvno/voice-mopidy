@@ -15,15 +15,14 @@ exports.sendToSpeechApi = (audioBytes) =>{
     audio:{content: audioBytes},
     config:config
   }
-  speech.recognize(request)
-    .then(data => {
-      const response = data[0];
-      let cmdLine = response.results.map(res=>res.alternatives[0].transcript).join('\n');
-      console.log("result: " + cmdLine);
-      resolveCommandLine(cmdLine,mopidy);
-  })
+  return speech.recognize(request);
+    //.then(data => {
+      //const response = data[0];
+      //let cmdLine = response.results.map(res=>res.alternatives[0].transcript).join('\n');
+      //console.log("result: " + cmdLine);
+      //resolveCommandLine(cmdLine,mopidy);
+  //})
 }
-
 
 const resolveCommandLine= async (commandLine,mopidy)=>{
     
