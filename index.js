@@ -2,19 +2,24 @@
 const record = require('node-record-lpcm16');
 const Detector = require('snowboy').Detector;
 const Models = require('snowboy').Models;
-const speechResolveService = require('./service/speechResolve')
-const { fromEvent,merge ,of} = require('rxjs');
-const { map,take,switchMap,mapTo,filter ,tap,throttleTime, takeUntil, bufferToggle, bufferCount,delay} = require('rxjs/operators');
+const speechResolveService = require('./service/speechResolve');
+const intentResolveService = require('./service/intentResolve')
+const { from, fromEvent,merge ,of} = require('rxjs');
+const { map,take,switchMap,filter ,tap, bufferToggle, bufferCount,delay} = require('rxjs/operators');
 
+//settings
+const utteranceSilenceLimit = 3; //externalize
+const utteranceTimeLimit = 5000;
+
+//init mopidy
 const Mopidy = require ('mopidy');
 let mopidy = new Mopidy({
     webSocketUrl: "ws://localhost:6680/mopidy/ws/",
     callingConvention: "by-position-or-by-name"
 });
-const utteranceSilenceLimit = 3; //externalize
-const utteranceTimeLimit = 5000;
-const models = new Models();
 
+//init snowboy hotword model
+const models = new Models();
 models.add({
   file: 'resources/models/snowboy.umdl',
   sensitivity: '0.5',
@@ -33,14 +38,13 @@ function startMicListening() {
                       threshold: 0,
                       verbose: false
                     });    
-  mic.pipe(detector);
+        mic.pipe(detector);
 }
 
 mopidy.on("state:online", function () {
   startMicListening();
   console.log("Mic listening")
 }); 
-
 
 //snowboy event streams
 const silenceDetected = fromEvent(detector, 'silence');
@@ -63,22 +67,25 @@ const utteranceTimeout =
           silenceDetected.pipe(bufferCount(utteranceSilenceLimit))
         )
         .pipe(take(1));
+      
 //todo throttle or sth
 const utterance = allSounds.pipe(
     bufferToggle(hotwordDetected,_=> utteranceTimeout)
 );
 
 //send to google
-utterance.subscribe(audio => speechResolveService.sendToSpeechApi(audio));
-
-//mopidy event streams
-const playBackStateChanged = fromEvent(mopidy, 'event:playbackStateChanged').pipe(
-    tap(state => console.log("mopidy new state: " + state.new_state))
+const response = utterance.pipe(
+  switchMap(bufferArr => 
+    from(speechResolveService.sendToSpeechApi((Buffer.concat(bufferArr)).toString('base64'))))
 );
-const playBackStoppedOrPaused = playBackStateChanged
-    .pipe(
-        filter(state => state.new_state === "stopped" || state.new_state === "paused"),
-    );
+
+//get response
+response.subscribe(data => {
+  const response = data[0];
+  let cmdLine = response.results.map(res=>res.alternatives[0].transcript).join('\n');
+  console.log("result: " + cmdLine);
+  intentResolveService.resolveCommand(cmdLine,mopidy);
+});
 
 
 
