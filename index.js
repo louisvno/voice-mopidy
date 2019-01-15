@@ -2,11 +2,10 @@
 const record = require('node-record-lpcm16');
 const Detector = require('snowboy').Detector;
 const Models = require('snowboy').Models;
-const googleSpeech = require('@google-cloud/speech')
 const speechResolveService = require('./service/speechResolve')
 const { fromEvent,merge ,of} = require('rxjs');
 const { map,take,switchMap,mapTo,filter ,tap,throttleTime, takeUntil, bufferToggle, bufferCount,delay} = require('rxjs/operators');
-let speech = new googleSpeech.SpeechClient();
+
 const Mopidy = require ('mopidy');
 let mopidy = new Mopidy({
     webSocketUrl: "ws://localhost:6680/mopidy/ws/",
@@ -15,31 +14,6 @@ let mopidy = new Mopidy({
 const utteranceSilenceLimit = 3; //externalize
 const utteranceTimeLimit = 5000;
 const models = new Models();
-const config = {
-  encoding: 'LINEAR16',
-  sampleRateHertz: 16000,
-  languageCode: 'en-US'
-}
-
-function sendToSpeechApi(audioBytes){
-  let request = {
-    audio:{content: audioBytes},
-    config:config
-  }
-
-  speech.recognize(request)
-    .then(data => {
-      const response = data[0];
-      let cmdLine = response.results.map(res=>res.alternatives[0].transcript).join('\n');
-      console.log(cmdLine);
-      speechResolveService.resolveCommandLine(cmdLine,mopidy);
-  })
-}
-
-mopidy.on("state:online", function () {
-  startMicListening();
-  console.log("Mic listening")
-}); 
 
 models.add({
   file: 'resources/models/snowboy.umdl',
@@ -61,6 +35,12 @@ function startMicListening() {
                     });    
   mic.pipe(detector);
 }
+
+mopidy.on("state:online", function () {
+  startMicListening();
+  console.log("Mic listening")
+}); 
+
 
 //snowboy event streams
 const silenceDetected = fromEvent(detector, 'silence');
@@ -89,7 +69,7 @@ const utterance = allSounds.pipe(
 );
 
 //send to google
-utterance.subscribe(audio => sendToSpeechApi(audio));
+utterance.subscribe(audio => speechResolveService.sendToSpeechApi(audio));
 
 //mopidy event streams
 const playBackStateChanged = fromEvent(mopidy, 'event:playbackStateChanged').pipe(
